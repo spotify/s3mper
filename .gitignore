@@ -1,6 +1,7 @@
 /build/
 /.nb-gradle/profiles/private/
 .gradle
+.idea
 .nb-gradle-properties
 scripts/python/.project
 scripts/python/.pydevproject
