@@ -19,6 +19,8 @@
 
 package com.netflix.bdp.s3mper.metastore;
 
+import com.netflix.bdp.s3mper.metastore.impl.DynamoDBMetastore;
+
 import java.net.URI;
 import java.util.List;
 import org.apache.hadoop.conf.Configuration;
@@ -40,5 +42,5 @@ public interface FileSystemMetastore {
     public void delete(Path path) throws Exception;
     
     public void close();
-    
+
 }
