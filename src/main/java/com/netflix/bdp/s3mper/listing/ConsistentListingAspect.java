@@ -310,6 +310,7 @@ public abstract class ConsistentListingAspect {
                         FileStatus status = fs.getFileStatus(path);
                         fullListing.add(status);
                     }
+                    alertDispatcher.recovered(missingPaths);
                     s3Listing = fullListing.toArray(new FileStatus[0]);
                 }
             } else {
