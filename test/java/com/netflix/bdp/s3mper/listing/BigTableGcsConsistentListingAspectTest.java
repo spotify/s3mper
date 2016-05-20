@@ -153,6 +153,32 @@ public class BigTableGcsConsistentListingAspectTest {
     }
 
     @Test
+    public void testRename() throws Throwable {
+        System.out.println("testFileCreateMethods");
+        Path folder1 = new Path(testPath + "/rename.test/");
+        Path folder2 = new Path(testPath + "/rename2.test/");
+        Path file = new Path(folder1, "file.test");
+
+        //create(Path)
+        assertTrue(deleteFs.mkdirs(folder1));
+        assertTrue(deleteFs.mkdirs(folder2));
+
+        OutputStream fout = deleteFs.create(file);
+        assertNotNull(fout);
+        fout.close();
+
+        List<FileInfo> files = meta.list(Collections.singletonList(file.getParent()));
+        assertEquals(1, files.size());
+
+        // move folder1 into folder2
+        deleteFs.rename(folder1, folder2);
+        //janitor.clearPath(testPath);
+
+        assertEquals(0, meta.list(Collections.singletonList(folder1)).size());
+        assertEquals(1, meta.list(Collections.singletonList(folder2)).size());
+    }
+
+    @Test
     public void testFileCreateMethods() throws Throwable {
         System.out.println("testFileCreateMethods");
         Path file = new Path(testPath + "/create-methods.test");
