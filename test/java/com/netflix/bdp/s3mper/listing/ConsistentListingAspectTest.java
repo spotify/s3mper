@@ -96,7 +96,7 @@ public class ConsistentListingAspectTest {
         conf.setFloat("s3mper.listing.threshold", 1);
         conf.set("s3mper.metastore.name", "ConsistentListingMetastoreTest");
         
-        testPath = new Path(System.getProperty("fs.test.path", "s3n://netflix-s3mper-test/test"));
+        testPath = new Path(System.getProperty("fs.test.path", "s3n://spotify-s3mper-test/test"));
         
         markerFs = FileSystem.get(testPath.toUri(), conf);
         
