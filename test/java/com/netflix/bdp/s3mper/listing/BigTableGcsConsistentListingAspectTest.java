@@ -22,7 +22,7 @@ package com.netflix.bdp.s3mper.listing;
 import com.amazonaws.services.dynamodb.model.ResourceNotFoundException;
 import com.netflix.bdp.s3mper.alert.impl.CloudWatchAlertDispatcher;
 import com.netflix.bdp.s3mper.metastore.FileInfo;
-import com.netflix.bdp.s3mper.metastore.impl.DynamoDBMetastore;
+import com.netflix.bdp.s3mper.metastore.impl.BigTableMetastore;
 import com.netflix.bdp.s3mper.metastore.impl.MetastoreJanitor;
 
 import org.apache.hadoop.conf.Configuration;
@@ -58,19 +58,13 @@ import static org.junit.Assert.fail;
  *
  * @author dweeks
  */
-public class ConsistentListingAspectTest {
+public class BigTableGcsConsistentListingAspectTest {
 
     private static final String GOOGLE_APPLICATION_CREDENTIALS = "GOOGLE_APPLICATION_CREDENTIALS";
 
-    private static final String AWS_ACCESS_KEY_ID = "AWS_ACCESS_KEY_ID";
-
-    private static final String AWS_SECRET_ACCESS_KEY = "AWS_SECRET_ACCESS_KEY";
-
-    private static final Logger log = Logger.getLogger(ConsistentListingAspectTest.class.getName());
+    private static final Logger log = Logger.getLogger(BigTableGcsConsistentListingAspectTest.class.getName());
     
-    private static DynamoDBMetastore meta;
-    private static CloudWatchAlertDispatcher alert;
-    private static MetastoreJanitor janitor;
+    private static BigTableMetastore meta;
     
     private static Configuration conf;
     private static FileSystem markerFs;
@@ -81,17 +75,13 @@ public class ConsistentListingAspectTest {
     public static void setUpClass() throws Exception {
         final String runId =  Integer.toHexString(new Random().nextInt());
 
-        for (final String envVar : asList(AWS_ACCESS_KEY_ID,
-                                          AWS_SECRET_ACCESS_KEY)) {
+        for (final String envVar : asList(GOOGLE_APPLICATION_CREDENTIALS)) {
             if (isNullOrEmpty(System.getenv(envVar))) {
                 fail("Required environment variable " + envVar + " is not defined");
             }
         }
 
         conf = new Configuration();
-
-        conf.set("fs.gs.awsAccessKeyId", System.getenv(AWS_ACCESS_KEY_ID));
-        conf.set("fs.gs.awsSecretAccessKey", System.getenv(AWS_SECRET_ACCESS_KEY));
 
         conf.set("fs.gs.project.id", "steel-ridge-91615");
         conf.set("fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem");
@@ -107,7 +97,6 @@ public class ConsistentListingAspectTest {
         conf.setLong("s3mper.listing.recheck.period", 1000);
         conf.setFloat("s3mper.listing.threshold", 1);
         conf.set("s3mper.metastore.name", "ConsistentListingMetastoreTest-" + runId);
-        conf.set("s3mper.metastore.impl", "com.netflix.bdp.s3mper.metastore.impl.DynamoDBMetastore");
         conf.setBoolean("s3mper.metastore.create", true);
 
         testPath = new Path(System.getProperty("fs.test.path", "gs://rohan-test/test-" +  runId));
@@ -118,39 +107,15 @@ public class ConsistentListingAspectTest {
         deleteConf.setBoolean("s3mper.metastore.deleteMarker.enabled", false);
         deleteFs = FileSystem.get(testPath.toUri(), deleteConf);
         
-        meta = new DynamoDBMetastore();
+        meta = new BigTableMetastore();
         meta.initalize(testPath.toUri(), conf);
-
-        while (true) {
-            try {
-                meta.list(asList(testPath));
-                break;
-            } catch (Exception e) {
-                if ((e instanceof ResourceNotFoundException)
-                    || (e.getCause() instanceof ResourceNotFoundException)) {
-                    Thread.sleep(1000);
-                } else {
-                    throw e;
-                }
-            }
-        }
-        
-        alert = new CloudWatchAlertDispatcher();
-        alert.init(testPath.toUri(), conf);
         
         Configuration janitorConf = new Configuration(conf);
         janitorConf.setBoolean("s3mper.metastore.deleteMarker.enabled", false);
-        
-        janitor = new MetastoreJanitor();
-        janitor.initalize(testPath.toUri(), janitorConf);
     }
     
     @AfterClass
     public static void tearDownClass() throws Exception {
-        if (janitor != null) {
-            janitor.clearPath(testPath);
-        }
-
         if (markerFs != null) {
             markerFs.close();
         }
@@ -175,8 +140,7 @@ public class ConsistentListingAspectTest {
         conf.setLong("s3mper.listing.recheck.count", 10);
         conf.setLong("s3mper.listing.recheck.period", 1000);
         conf.setFloat("s3mper.listing.threshold", 1);
-                
-        janitor.clearPath(testPath);
+
         deleteFs.delete(testPath, true);
     }
     
@@ -184,9 +148,34 @@ public class ConsistentListingAspectTest {
     public void tearDown() throws Exception {
         System.out.println("==========================  Tearing Down  =========================");
         conf.setBoolean("s3mper.metastore.deleteMarker.enabled", false);
-        janitor.clearPath(testPath);
         deleteFs.delete(testPath, true);
         conf.setFloat("s3mper.listing.threshold", 1);
+    }
+
+    @Test
+    public void testRename() throws Throwable {
+        System.out.println("testFileCreateMethods");
+        Path folder1 = new Path(testPath + "/rename.test/");
+        Path folder2 = new Path(testPath + "/rename2.test/");
+        Path file = new Path(folder1, "file.test");
+
+        //create(Path)
+        assertTrue(deleteFs.mkdirs(folder1));
+        assertTrue(deleteFs.mkdirs(folder2));
+
+        OutputStream fout = deleteFs.create(file);
+        assertNotNull(fout);
+        fout.close();
+
+        List<FileInfo> files = meta.list(Collections.singletonList(file.getParent()));
+        assertEquals(1, files.size());
+
+        // move folder1 into folder2
+        deleteFs.rename(folder1, folder2);
+        //janitor.clearPath(testPath);
+
+        assertEquals(0, meta.list(Collections.singletonList(folder1)).size());
+        assertEquals(1, meta.list(Collections.singletonList(folder2)).size());
     }
 
     @Test
@@ -201,7 +190,7 @@ public class ConsistentListingAspectTest {
         List<FileInfo> files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(Path, Progressable)");
         fout = deleteFs.create(file, new Progressable(){
@@ -214,7 +203,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(Path, boolean)");
         fout = deleteFs.create(file, true);
@@ -223,7 +212,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(Path, short)");
         fout = deleteFs.create(file, (short) 1);
@@ -232,7 +221,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(Path, boolean, int)");
         fout = deleteFs.create(file, true, 4096);
@@ -241,7 +230,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(FileSystem, Path, FsPermission)");
         fout = deleteFs.create(deleteFs, file, FsPermission.getDefault());
@@ -250,7 +239,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(FileSystem, short, Progressable)");
         fout = deleteFs.create(file, (short)1, new Progressable(){
@@ -263,7 +252,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(FileSystem, boolean, int, Progressable)");
         fout = deleteFs.create(file, true, 4096, new Progressable(){
@@ -276,7 +265,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(FileSystem, boolean, int, short, long)");
         fout = deleteFs.create(file, true, 4096, (short)1, 100000000);
@@ -285,7 +274,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
         
         System.out.println("create(FileSystem, boolean, int, short, long, Progressable)");
         fout = deleteFs.create(file, true, 4096, (short)1, 100000000,new Progressable(){
@@ -298,7 +287,7 @@ public class ConsistentListingAspectTest {
         files = meta.list(Collections.singletonList(file.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(file.getParent(), true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
     }
     
     
@@ -313,7 +302,7 @@ public class ConsistentListingAspectTest {
         List<FileInfo> files = meta.list(Collections.singletonList(arg1Path.getParent()));
         assertEquals(1, files.size());
         deleteFs.delete(arg1Path, true);
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
     }
 
     @Test
@@ -346,7 +335,7 @@ public class ConsistentListingAspectTest {
         List<FileInfo> files = meta.list(Collections.singletonList(testPath));
         
         assertEquals(fileCount * threadCount, files.size());
-        janitor.clearPath(testPath);
+        //janitor.clearPath(testPath);
     }
     
     @Test
@@ -435,7 +424,7 @@ public class ConsistentListingAspectTest {
         p = testPath;
         for (int level=0; level<5; level++) {
             p = new Path(p, ""+level);
-            janitor.clearPath(p);
+            //janitor.clearPath(p);
         }
     }
     
@@ -469,15 +458,6 @@ public class ConsistentListingAspectTest {
         meta.setTimeout(currentTimeout);
         
         assertEquals("Timeouts test failed", count, timeouts);
-    }
-    
-    @Test
-    public void testTimeoutAlerts() throws Exception {
-        System.out.println("testTimeoutAlerts");
-        
-        for (int i = 0; i < 10; i++) {
-            alert.timeout("testAlert", Collections.singletonList(testPath));
-        }
     }
 
     @Test
