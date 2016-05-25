@@ -69,6 +69,7 @@ public abstract class ConsistentListingAspect {
     private AlertDispatcher alertDispatcher = null;
         
     private boolean disabled = true;
+    private boolean alertOnError = Boolean.getBoolean("s3mper.alertOnError");
     private boolean failOnError = Boolean.getBoolean("s3mper.failOnError");
     private boolean taskFailOnError = Boolean.getBoolean("s3mper.task.failOnError");
     private boolean checkTaskListings = Boolean.getBoolean("s3mper.listing.task.check"); 
@@ -133,7 +134,7 @@ public abstract class ConsistentListingAspect {
             log.debug("S3mper Metastore already initialized.");
         }
 
-        if(alertDispatcher == null) {
+        if(alertDispatcher == null && alertOnError) {
             log.debug("Initializing Alert Dispatcher");
 
             try {
@@ -219,8 +220,10 @@ public abstract class ConsistentListingAspect {
             metastore.add(path, trackDirectories && pjp.getSignature().getName().contains("mkdir"));
         } catch (TimeoutException t) {
             log.error("Timeout occurred adding path to metastore: " + path, t);
-            
-            alertDispatcher.timeout("metastoreUpdate", Collections.singletonList(path));
+
+            if (alertOnError) {
+                alertDispatcher.timeout("metastoreUpdate", Collections.singletonList(path));
+            }
             
             if(failOnTimeout) {
                 throw t;
@@ -354,7 +357,9 @@ public abstract class ConsistentListingAspect {
                 }
 
                 if (!missingPaths.isEmpty()) {
-                    alertDispatcher.alert(missingPaths);
+                    if (alertOnError) {
+                        alertDispatcher.alert(missingPaths);
+                    }
 
                     if (shouldFail(conf)) {
                         throw new S3ConsistencyException("Consistency check failed. See go/s3mper for details. Missing paths: " + missingPaths);
@@ -364,14 +369,18 @@ public abstract class ConsistentListingAspect {
                 } else {
                     if (checkAttempt > 0) {
                         log.info(format("Listing achieved consistency after %d attempts", checkAttempt));
-                        alertDispatcher.recovered(pathsToCheck);
+                        if (alertOnError) {
+                            alertDispatcher.recovered(pathsToCheck);
+                        }
                     }
                 }
             }
         } catch (TimeoutException t) {
             log.error("Timeout occurred listing metastore paths: " + pathsToCheck, t);
-            
-            alertDispatcher.timeout("metastoreCheck", pathsToCheck);
+
+            if (alertOnError) {
+                alertDispatcher.timeout("metastoreCheck", pathsToCheck);
+            }
             
             if(failOnTimeout) {
                 throw t;
@@ -539,7 +548,9 @@ public abstract class ConsistentListingAspect {
         } catch (TimeoutException t) {
             log.error("Timeout occurred rename metastore path: " + info.srcPath, t);
 
-            alertDispatcher.timeout("metastoreRename", Collections.singletonList(info.srcPath));
+            if (alertOnError) {
+                alertDispatcher.timeout("metastoreRename", Collections.singletonList(info.srcPath));
+            }
 
             if(failOnTimeout) {
                 throw t;
@@ -576,7 +587,9 @@ public abstract class ConsistentListingAspect {
         } catch (TimeoutException t) {
             log.error("Timeout occurred rename cleanup metastore path: " + info.srcPath, t);
 
-            alertDispatcher.timeout("metastoreRenameCleanup", Collections.singletonList(info.srcPath));
+            if (alertOnError) {
+                alertDispatcher.timeout("metastoreRenameCleanup", Collections.singletonList(info.srcPath));
+            }
 
             if(failOnTimeout) {
                 throw t;
@@ -655,8 +668,10 @@ public abstract class ConsistentListingAspect {
             }
         } catch (TimeoutException t) {
             log.error("Timeout occurred deleting metastore path: " + deletePath, t);
-            
-            alertDispatcher.timeout("metastoreDelete", Collections.singletonList(deletePath));
+
+            if (alertOnError) {
+                alertDispatcher.timeout("metastoreDelete", Collections.singletonList(deletePath));
+            }
             
             if(failOnTimeout) {
                 throw t;

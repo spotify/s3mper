@@ -55,6 +55,7 @@ public class BigTableTestBase {
             System.getenv(GOOGLE_APPLICATION_CREDENTIALS));
 
         conf.setBoolean("s3mper.disable", false);
+        conf.setBoolean("s3mper.alertOnError", false);
         conf.setBoolean("s3mper.failOnError", true);
         conf.setBoolean("s3mper.metastore.deleteMarker.enabled", true);
         conf.setBoolean("s3mper.reporting.disabled", true);
