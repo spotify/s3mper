@@ -97,22 +97,25 @@ public abstract class ConsistentListingAspect {
      * @throws Exception  
      */
     @Before("init()") 
-    public synchronized void initialize(JoinPoint jp) throws Exception {
+    public void initialize(JoinPoint jp) throws Exception {
 
         URI uri = (URI) jp.getArgs()[0];
         Configuration conf = (Configuration) jp.getArgs()[1];
-        
+        initialize(conf, uri);
+    }
+
+    public synchronized void initialize(Configuration conf, URI uri) throws Exception {
         updateConfig(conf);
-        
+
         //Check again after updating configs
         if(disabled) {
             return;
         }
-        
+
         if(metastore == null) {
             log.debug("Initializing S3mper Metastore");
-            
-            //FIXME: This is defaulted to the dynamodb metastore impl, but shouldn't 
+
+            //FIXME: This is defaulted to the dynamodb metastore impl, but shouldn't
             //       reference it directly like this.
             Class<?> metaImpl = conf.getClass("s3mper.metastore.impl", com.netflix.bdp.s3mper.metastore.impl.DynamoDBMetastore.class);
 
@@ -124,18 +127,18 @@ public abstract class ConsistentListingAspect {
 
                 if(failOnError) {
                     throw e;
-                } 
+                }
             }
         } else {
             log.debug("S3mper Metastore already initialized.");
         }
-        
+
         if(alertDispatcher == null) {
             log.debug("Initializing Alert Dispatcher");
-            
+
             try {
                 Class<?> dispatcherImpl = conf.getClass("s3mper.dispatcher.impl", com.netflix.bdp.s3mper.alert.impl.CloudWatchAlertDispatcher.class);
-                
+
                 alertDispatcher = (AlertDispatcher) ReflectionUtils.newInstance(dispatcherImpl, conf);
                 alertDispatcher.init(uri, conf);
             } catch (Exception e) {
