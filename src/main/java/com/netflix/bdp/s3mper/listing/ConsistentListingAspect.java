@@ -99,7 +99,6 @@ public abstract class ConsistentListingAspect {
      */
     @Before("init()") 
     public void initialize(JoinPoint jp) throws Exception {
-
         URI uri = (URI) jp.getArgs()[0];
         Configuration conf = (Configuration) jp.getArgs()[1];
         initialize(conf, uri);
@@ -151,7 +150,7 @@ public abstract class ConsistentListingAspect {
                     throw e;
                 }
             }
-        } else {
+        } else if (alertOnError) {
             alertDispatcher.setConfig(conf);
         }
     }

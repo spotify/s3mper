@@ -1,5 +1,7 @@
 package com.netflix.bdp.s3mper.listing;
 
+import com.google.cloud.hadoop.gcsio.GoogleCloudStorageFileSystem;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -15,13 +17,18 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class PartialReadTest extends BigTableTestBase {
+    private Object doRenameNotifier = new Object();
+    private Object finnishRenameNotifier = new Object();
+    private volatile boolean metadataCopied = false;
+    private volatile boolean renameExecuted = false;
+    private volatile boolean metadataDeleted = false;
 
-    private class BlockingListing implements ProceedingJoinPoint {
+    private class BlockingRename implements ProceedingJoinPoint {
         private final FileSystem fs;
         private final Path src;
         private final Path dst;
 
-        public BlockingListing(FileSystem fs, Path src, Path dst) {
+        public BlockingRename(FileSystem fs, Path src, Path dst) {
             this.fs = fs;
             this.src = src;
             this.dst = dst;
@@ -34,10 +41,23 @@ public class PartialReadTest extends BigTableTestBase {
 
         @Override
         public Object proceed() throws Throwable {
-            synchronized (this) {
-                this.wait();
+            metadataCopied = true;
+            synchronized (doRenameNotifier) {
+                doRenameNotifier.wait();
             }
-            return true;
+
+            boolean success = fs.rename(src, dst);
+
+            renameExecuted = true;
+
+            if (success) {
+                synchronized (finnishRenameNotifier) {
+                    finnishRenameNotifier.wait();
+                }
+
+            }
+
+            return success;
         }
 
         @Override
@@ -197,7 +217,11 @@ public class PartialReadTest extends BigTableTestBase {
     @Test
     public void testPartialRead() throws Throwable {
         final URI uri = URI.create(testBucket);
-        final FileSystem fs = FileSystem.get(uri, conf);
+        final Configuration noS3mperConf = new Configuration(conf);
+        noS3mperConf.setBoolean("s3mper.disable", true);
+        noS3mperConf.setBoolean("fs.gs.impl.disable.cache", true);
+        // Pure filesystem without s3mper
+        final FileSystem noS3mperFs = FileSystem.get(uri, noS3mperConf);
 
         final Path folder1 = new Path(testPath + "/rename/");
         final Path folder2 = new Path(testPath + "/rename2/");
@@ -212,13 +236,15 @@ public class PartialReadTest extends BigTableTestBase {
 
         final ConsistentListingAspect aspect = new ConcreteListingAspect();
         aspect.initialize(conf, uri);
-        final BlockingListing blockingListing = new BlockingListing(fs, folder1, folder2);
+        final BlockingRename blockingRename = new BlockingRename(noS3mperFs, folder1, folder2);
 
         Thread thread = new Thread() {
             @Override
             public void run() {
                 try {
-                    aspect.metastoreRename(blockingListing);
+                    // This rename will block until being notified after duplicating the metadata
+                    assertTrue((Boolean) aspect.metastoreRename(blockingRename));
+                    metadataDeleted = true;
                 } catch (Throwable throwable) {
                     throwable.printStackTrace();
                 }
@@ -226,22 +252,46 @@ public class PartialReadTest extends BigTableTestBase {
         };
         thread.start();
 
-        Thread.sleep(5000);
+        while (!metadataCopied) {
+            Thread.sleep(100);
+        }
 
-        final Listing listing = new Listing(fs, folder2);
+        final Listing listing = new Listing(noS3mperFs, folder2);
         boolean exception = false;
         try {
+            // Data was not moved yet. Exception should be thrown.
             aspect.metastoreCheck(listing);
         } catch (S3ConsistencyException e){
             exception = true;
-            synchronized (blockingListing) {
-                blockingListing.notify();
+            synchronized (doRenameNotifier) {
+                doRenameNotifier.notify();
             }
         }
         assertTrue(exception);
 
-        Thread.sleep(5000);
+        while (!renameExecuted) {
+            Thread.sleep(100);
+        }
 
+        final Listing rootListing = new Listing(noS3mperFs, testPath);
+        exception = false;
+        try {
+            // Files have been moved by now. Listing the source parent should fail.
+            aspect.metastoreCheck(rootListing);
+        } catch (S3ConsistencyException e){
+            exception = true;
+            synchronized (finnishRenameNotifier) {
+                finnishRenameNotifier.notify();
+            }
+        }
+        assertTrue(exception);
+
+        while (!metadataDeleted) {
+            Thread.sleep(100);
+        }
+
+        // Rename completed successfully. Everything can be listed
         aspect.metastoreCheck(listing);
+        aspect.metastoreCheck(rootListing);
     }
 }
