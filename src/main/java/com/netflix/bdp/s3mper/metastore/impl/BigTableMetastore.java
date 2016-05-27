@@ -59,6 +59,7 @@ public class BigTableMetastore implements FileSystemMetastore {
                 admin.createTable(descriptor);
             }
             catch(IOException e) {
+                log.error("Error while creating table", e);
                 // Ignore existing table
                 // Fixme: Ignores a bunch of other crap as well. :-/
             }
