@@ -69,6 +69,7 @@ public abstract class ConsistentListingAspect {
     private AlertDispatcher alertDispatcher = null;
         
     private boolean disabled = true;
+    private boolean darkload = Boolean.getBoolean("s3mper.darkload");
     private boolean failOnError = Boolean.getBoolean("s3mper.failOnError");
     private boolean taskFailOnError = Boolean.getBoolean("s3mper.task.failOnError");
     private boolean checkTaskListings = Boolean.getBoolean("s3mper.listing.task.check"); 
@@ -159,7 +160,8 @@ public abstract class ConsistentListingAspect {
             log.warn("S3mper Consistency explicitly disabled.");
             return;
         }
-        
+
+        darkload = conf.getBoolean("s3mper.darkload", darkload);
         failOnError = conf.getBoolean("s3mper.failOnError", failOnError);
         taskFailOnError = conf.getBoolean("s3mper.task.failOnError", taskFailOnError);
         checkTaskListings = conf.getBoolean("s3mper.listing.task.check", checkTaskListings);
@@ -256,6 +258,10 @@ public abstract class ConsistentListingAspect {
         updateConfig(conf);
         
         FileStatus [] s3Listing = (FileStatus[]) pjp.proceed();
+        FileStatus[] originalListing = null;
+        if (darkload) {
+            originalListing = s3Listing.clone();
+        }
         
         List<Path> pathsToCheck = new ArrayList<Path>();
         
@@ -380,8 +386,8 @@ public abstract class ConsistentListingAspect {
                 throw e;
             }
         }
-        
-        return s3Listing;
+
+        return darkload ? originalListing : s3Listing;
     }
     
     /**
