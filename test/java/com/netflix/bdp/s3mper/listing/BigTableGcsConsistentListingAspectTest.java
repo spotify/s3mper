@@ -706,6 +706,14 @@ public class BigTableGcsConsistentListingAspectTest {
         
         
     }
+
+    @Test
+    public void testDarkloading() throws Throwable {
+        Path path = new Path(testPath + "/test");
+        meta.add(path, false);
+        List<FileInfo> files = meta.list(Collections.singletonList(path.getParent()));
+        assertEquals(0, files.size());
+    }
     
     private static class FileCreator extends Thread {
         int instance;
