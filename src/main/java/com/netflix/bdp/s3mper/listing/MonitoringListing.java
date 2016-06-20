@@ -7,6 +7,9 @@ import com.spotify.metrics.core.RemoteSemanticMetricRegistry;
 import com.spotify.metrics.core.RemoteTimer;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.Signature;
+import org.aspectj.lang.reflect.SourceLocation;
+import org.aspectj.runtime.internal.AroundClosure;
 
 /**
  * A Listing implementation that composes simple monitoring
@@ -19,8 +22,10 @@ public class MonitoringListing implements Listing {
     private final RemoteSemanticMetricRegistry registry;
 
     private final MetricId baseId = MetricId.build("hadoop");
-    private final MetricId meterBaseId = baseId.tagged("what", "s3mper-requests", "unit", "request");
-    private final MetricId timerBaseId = baseId.tagged("unit", "ns");
+    private final MetricId meterBaseId = baseId.tagged(
+            "what", "s3mper-requests", "unit", "request");
+    private final MetricId timerBaseId = baseId.tagged(
+            "unit", "ns");
 
     public MonitoringListing(
             RemoteSemanticMetricRegistry registry, Listing inner) {
@@ -46,15 +51,10 @@ public class MonitoringListing implements Listing {
     }
 
     @Override
-    public void initialize(JoinPoint jp) throws Exception {
-        inner.initialize(jp);
-    }
-
-    @Override
     public Object metastoreUpdate(ProceedingJoinPoint pjp) throws Throwable {
         try {
             RemoteTimer.Context timer = timer("update");
-            Object res = inner.metastoreUpdate(pjp);
+            Object res = inner.metastoreUpdate(new MonitoredJoinPoint(pjp, "update"));
             timer.stop();
             okMeter("update").mark();
             return res;
@@ -68,7 +68,7 @@ public class MonitoringListing implements Listing {
     public Object metastoreCheck(ProceedingJoinPoint pjp) throws Throwable {
         try {
             RemoteTimer.Context timer = timer("check");
-            Object res = inner.metastoreCheck(pjp);
+            Object res = inner.metastoreCheck(new MonitoredJoinPoint(pjp, "check"));
             timer.stop();
             okMeter("check").mark();
             return res;
@@ -82,7 +82,7 @@ public class MonitoringListing implements Listing {
     public Object metastoreRename(ProceedingJoinPoint pjp) throws Throwable {
         try {
             RemoteTimer.Context timer = timer("rename");
-            Object res = inner.metastoreRename(pjp);
+            Object res = inner.metastoreRename(new MonitoredJoinPoint(pjp, "rename"));
             timer.stop();
             okMeter("rename").mark();
             return res;
@@ -96,13 +96,102 @@ public class MonitoringListing implements Listing {
     public Object metastoreDelete(ProceedingJoinPoint pjp) throws Throwable {
         try {
             RemoteTimer.Context timer = timer("delete");
-            Object res = inner.metastoreDelete(pjp);
+            Object res = inner.metastoreDelete(new MonitoredJoinPoint(pjp, "delete"));
             timer.stop();
             okMeter("delete").mark();
             return res;
         } catch (Exception e) {
             errorMeter("delete", e.getMessage()).mark();
             throw e;
+        }
+    }
+
+    private class MonitoredJoinPoint implements ProceedingJoinPoint {
+
+        private final ProceedingJoinPoint inner;
+        private final String action;
+
+        private MonitoredJoinPoint(ProceedingJoinPoint inner, String action) {
+            this.inner = inner;
+            this.action = action + "-pjp";
+        }
+
+        @Override
+        public void set$AroundClosure(AroundClosure arc) {
+          inner.set$AroundClosure(arc);
+        }
+
+        @Override
+        public Object proceed() throws Throwable {
+            try {
+                RemoteTimer.Context timer = timer(action);
+                Object res = inner.proceed();
+                timer.stop();
+                okMeter(action).mark();
+                return res;
+            } catch (Exception e) {
+                errorMeter(action, e.getMessage()).mark();
+                throw e;
+            }
+        }
+
+        @Override
+        public Object proceed(Object[] args) throws Throwable {
+            try {
+                RemoteTimer.Context timer = timer(action);
+                Object res = inner.proceed(args);
+                timer.stop();
+                okMeter(action).mark();
+                return res;
+            } catch (Exception e) {
+                errorMeter(action, e.getMessage()).mark();
+                throw e;
+            }
+        }
+
+        @Override
+        public String toShortString() {
+            return inner.toShortString();
+        }
+
+        @Override
+        public String toLongString() {
+            return inner.toLongString();
+        }
+
+        @Override
+        public Object getThis() {
+            return inner.getThis();
+        }
+
+        @Override
+        public Object getTarget() {
+            return inner.getTarget();
+        }
+
+        @Override
+        public Object[] getArgs() {
+            return inner.getArgs();
+        }
+
+        @Override
+        public Signature getSignature() {
+            return inner.getSignature();
+        }
+
+        @Override
+        public SourceLocation getSourceLocation() {
+            return inner.getSourceLocation();
+        }
+
+        @Override
+        public String getKind() {
+            return inner.getKind();
+        }
+
+        @Override
+        public StaticPart getStaticPart() {
+            return getStaticPart();
         }
     }
 
