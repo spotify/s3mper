@@ -38,6 +38,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.netflix.bdp.s3mper.metastore.Metastore;
+import com.spotify.metrics.core.MetricId;
+import com.spotify.metrics.core.RemoteHistogram;
+import com.spotify.metrics.core.RemoteMeter;
+import com.spotify.metrics.remote.SemanticAggregatorMetricRegistry;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -84,6 +88,14 @@ public abstract class ConsistentListingAspect {
     private long taskRecheckCount = Long.getLong("s3mper.listing.task.recheck.count", 0);
     private long taskRecheckPeriod = Long.getLong("s3mper.listing.task.recheck.period", TimeUnit.MINUTES.toMillis(1));
     private boolean statOnMissingFile = Boolean.getBoolean("s3mper.listing.statOnMissingFile");
+    private RemoteMeter createMeter;
+    private RemoteHistogram createHistogram;
+    private RemoteHistogram deleteHistogram;
+    private RemoteMeter deleteMeter;
+    private RemoteMeter renameMeter;
+    private RemoteHistogram renameHistogram;
+    private RemoteMeter listMeter;
+    private RemoteHistogram listHistogram;
 
     @Pointcut
     public abstract void init();
@@ -102,18 +114,30 @@ public abstract class ConsistentListingAspect {
 
         URI uri = (URI) jp.getArgs()[0];
         Configuration conf = (Configuration) jp.getArgs()[1];
-        
+
+        SemanticAggregatorMetricRegistry metricRegistry = new SemanticAggregatorMetricRegistry(
+            "http://lon3-semigator-a1.lon3.spotify.net", 20000, 5, 1000);
+
+        createMeter = metricRegistry.meter(new MetricId("createCounter"));
+        createHistogram = metricRegistry.histogram(new MetricId("createHist"));
+        renameMeter = metricRegistry.meter(new MetricId("renameCounter"));
+        renameHistogram = metricRegistry.histogram(new MetricId("renameHist"));
+        listMeter = metricRegistry.meter(new MetricId("listMeter"));
+        listHistogram = metricRegistry.histogram(new MetricId("listHist"));
+        deleteMeter = metricRegistry.meter(new MetricId("deleteMeter"));
+        deleteHistogram = metricRegistry.histogram(new MetricId("deleteHist"));
+
         updateConfig(conf);
-        
+
         //Check again after updating configs
         if(disabled) {
             return;
         }
-        
+
         if(metastore == null) {
             log.debug("Initializing S3mper Metastore");
-            
-            //FIXME: This is defaulted to the dynamodb metastore impl, but shouldn't 
+
+            //FIXME: This is defaulted to the dynamodb metastore impl, but shouldn't
             //       reference it directly like this.
             Class<?> metaImpl = conf.getClass("s3mper.metastore.impl", com.netflix.bdp.s3mper.metastore.impl.DynamoDBMetastore.class);
 
@@ -191,6 +215,9 @@ public abstract class ConsistentListingAspect {
      */
     @Around("create() && !within(ConsistentListingAspect)")
     public Object metastoreUpdate(final ProceedingJoinPoint pjp) throws Throwable {
+
+        long startTime = System.currentTimeMillis();
+
         if(disabled) {
             return pjp.proceed();
         }
@@ -231,7 +258,9 @@ public abstract class ConsistentListingAspect {
                 throw e;
             }
         }
-        
+
+        this.createMeter.mark();
+        this.createHistogram.update(System.currentTimeMillis() - startTime);
         return result;
     }
     
@@ -247,6 +276,7 @@ public abstract class ConsistentListingAspect {
      */
     @Around("list() && !cflow(delete()) && !within(ConsistentListingAspect)")
     public Object metastoreCheck(final ProceedingJoinPoint pjp) throws Throwable {
+        long startTime = System.currentTimeMillis();
 
         FileSystem fs = (FileSystem) pjp.getThis();
 
@@ -387,6 +417,8 @@ public abstract class ConsistentListingAspect {
             }
         }
 
+        this.listMeter.mark();
+        this.listHistogram.update(System.currentTimeMillis() - startTime);
         return darkload ? originalListing : s3Listing;
     }
     
@@ -477,6 +509,7 @@ public abstract class ConsistentListingAspect {
      */
     @Around("rename() && !within(ConsistentListingAspect)")
     public Object metastoreRename(final ProceedingJoinPoint pjp) throws Throwable {
+        long startTime = System.currentTimeMillis();
         if(disabled) {
             return pjp.proceed();
         }
@@ -501,6 +534,9 @@ public abstract class ConsistentListingAspect {
             // Manual cleanup will be required in the case of failure.
             metadataCleanup(conf, fs, renameInfo);
         }
+
+        this.renameMeter.mark();
+        this.renameHistogram.update(System.currentTimeMillis() - startTime);
         return obj;
     }
 
@@ -618,6 +654,8 @@ public abstract class ConsistentListingAspect {
      */
     @Around("delete() && !within(ConsistentListingAspect)")
     public Object metastoreDelete(final ProceedingJoinPoint pjp) throws Throwable {
+        long startTime = System.currentTimeMillis();
+
         if(disabled) {
             return pjp.proceed();
         }
@@ -671,7 +709,9 @@ public abstract class ConsistentListingAspect {
                 throw e;
             }
         }
-        
+
+        this.renameMeter.mark();
+        this.renameHistogram.update(System.currentTimeMillis() - startTime);
         return pjp.proceed();
     }
     
