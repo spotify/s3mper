@@ -52,6 +52,7 @@ tasks.withType(JavaCompile) {
 
 repositories {
     mavenCentral()
+    mavenLocal()
 }
 
 String classifier;
@@ -83,6 +84,7 @@ dependencies {
     compile 'org.apache.hbase:hbase-client:1.2.1'
     compile group: 'io.netty', name: 'netty-tcnative', version: '1.1.33.Fork13', classifier: classifier
     compile 'com.fasterxml.jackson.core:jackson-databind:2.6.1'
+    compile 'com.spotify.metrics:semantic-metrics-remote:0.6.1-SNAPSHOT'
     testCompile group: 'junit', name: 'junit', version: '4.10'
 }
 
