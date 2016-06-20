@@ -52,10 +52,7 @@ public abstract class ConsistentListingAspect implements Listing {
     private static final Logger log =
             Logger.getLogger(ConsistentListingAspect.class.getName());
 
-    private final RemoteSemanticMetricRegistry registry =
-            new SemanticAggregatorMetricRegistry(
-                    "http://semigator.services.lon3.spotify.net",
-                    20000, 5, 1000);
+    private RemoteSemanticMetricRegistry registry;
     private Listing listing;
     private final ConsistentListingConfig config = new ConsistentListingConfig();
 
@@ -72,7 +69,6 @@ public abstract class ConsistentListingAspect implements Listing {
      * @param jp
      * @throws Exception
      */
-    @Override
     @Before("init()")
     public synchronized void initialize(JoinPoint jp) throws Exception {
 
@@ -80,6 +76,16 @@ public abstract class ConsistentListingAspect implements Listing {
         Configuration conf = (Configuration) jp.getArgs()[1];
 
         config.updateConfig(conf);
+
+        registry = null;
+        if (config.isMonitoring()) {
+            registry =
+                    new SemanticAggregatorMetricRegistry(
+                            config.getMonitoringHost(),
+                            config.getMonitoringPort(),
+                            config.getMonitoringConcurrency(),
+                            config.getMonitoringHighWaterMark());
+        }
 
         if (metastore == null) {
             log.debug("Initializing S3mper Metastore");
@@ -95,8 +101,7 @@ public abstract class ConsistentListingAspect implements Listing {
                 m.initalize(uri, conf);
                 if (config.isMonitoring()) {
                     metastore = new MonitoringMetastore(m, registry);
-                }
-                else {
+                } else {
                     metastore = m;
                 }
             } catch (Exception e) {

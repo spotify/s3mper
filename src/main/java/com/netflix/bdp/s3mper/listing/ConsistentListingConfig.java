@@ -21,7 +21,6 @@ public class ConsistentListingConfig {
     private AlertDispatcher alertDispatcher = null;
 
     private boolean disabled = true;
-    private boolean monitoring = Boolean.getBoolean("s3mper.monitoring");
 
     private boolean darkload = Boolean.getBoolean("s3mper.darkload");
     private boolean failOnError = Boolean.getBoolean("s3mper.failOnError");
@@ -39,6 +38,28 @@ public class ConsistentListingConfig {
     private long taskRecheckPeriod = Long.getLong("s3mper.listing.task.recheck.period", TimeUnit.MINUTES.toMillis(1));
     private boolean statOnMissingFile = Boolean.getBoolean("s3mper.listing.statOnMissingFile");
 
+    private boolean monitoring = false;
+    private String monitoringHost = null;
+    private int monitoringPort = Integer.getInteger("s3mper.monitoring.port", 25652);
+    private int monitoringConcurrency = Integer.getInteger("s3mper.monitoring.port", 5);
+    private int monitoringHighWaterMark = Integer.getInteger("s3mper.monitoring.port", 1000);
+
+    public String getMonitoringHost() {
+        return monitoringHost;
+    }
+
+    public int getMonitoringPort() {
+        return monitoringPort;
+    }
+
+    public int getMonitoringConcurrency() {
+        return monitoringConcurrency;
+    }
+
+    public int getMonitoringHighWaterMark() {
+        return monitoringHighWaterMark;
+    }
+
     public void updateConfig(Configuration conf) {
         disabled = conf.getBoolean("s3mper.disable", disabled);
 
@@ -47,7 +68,15 @@ public class ConsistentListingConfig {
             return;
         }
 
-        monitoring = conf.getBoolean("s3mper.monitoring", monitoring);
+        monitoring = conf.get("s3mper.monitoring.host") != null;
+
+        if (monitoring) {
+            monitoringHost = conf.get("s3mper.monitoring.host");
+            monitoringPort = conf.getInt("s3mper.monitoring.port", monitoringPort);
+            monitoringConcurrency = conf.getInt("s3mper.monitoring.concurrency", monitoringConcurrency);
+            monitoringHighWaterMark = conf.getInt("s3mper.monitoring.highwatermark", monitoringHighWaterMark);
+        }
+
         darkload = conf.getBoolean("s3mper.darkload", darkload);
         failOnError = conf.getBoolean("s3mper.failOnError", failOnError);
         taskFailOnError = conf.getBoolean("s3mper.task.failOnError", taskFailOnError);
