@@ -63,7 +63,7 @@ public class MonitoringListing implements Listing {
             okMeter("update").mark();
             return res;
         } catch (Exception e) {
-            errorMeter("update", e.getMessage()).mark();
+            errorMeter("update", e.getClass().toString()).mark();
             throw e;
         }
     }
@@ -77,7 +77,7 @@ public class MonitoringListing implements Listing {
             okMeter("check").mark();
             return res;
         } catch (Exception e) {
-            errorMeter("check", e.getMessage()).mark();
+            errorMeter("check", e.getClass().toString()).mark();
             throw e;
         }
     }
@@ -105,7 +105,7 @@ public class MonitoringListing implements Listing {
             okMeter("delete").mark();
             return res;
         } catch (Exception e) {
-            errorMeter("delete", e.getMessage()).mark();
+            errorMeter("delete", e.getClass().toString()).mark();
             throw e;
         }
     }
@@ -148,7 +148,7 @@ public class MonitoringListing implements Listing {
                 okPjpMeter(action).mark();
                 return res;
             } catch (Exception e) {
-                errorPjpMeter(action, e.getMessage()).mark();
+                errorPjpMeter(action, e.getClass().toString()).mark();
                 throw e;
             }
         }
@@ -162,7 +162,7 @@ public class MonitoringListing implements Listing {
                 okPjpMeter(action).mark();
                 return res;
             } catch (Exception e) {
-                errorPjpMeter(action, e.getMessage()).mark();
+                errorPjpMeter(action, e.getClass().toString()).mark();
                 throw e;
             }
         }

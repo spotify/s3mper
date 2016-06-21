@@ -167,7 +167,7 @@ public class MonitoringMetastore implements FileSystemMetastore{
                 okMeter(name).mark();
                 return res;
             } catch (Exception e) {
-                errorMeter(name, e.getMessage()).mark();
+                errorMeter(name, e.getClass().toString()).mark();
                 throw e;
             }
         }
