@@ -32,9 +32,15 @@ public class MonitoringMetastore implements FileSystemMetastore{
 
     private final MetricId baseId = MetricId.build("hadoop");
     private final MetricId meterBaseId = baseId.tagged(
-            "what", "s3mper-requests", "unit", "request");
+            "what", "s3mper-metastore-requests", "unit", "request");
     private final MetricId timerBaseId = baseId.tagged(
             "unit", "ns");
+
+    public MonitoringMetastore(FileSystemMetastore inner, RemoteSemanticMetricRegistry registry) {
+        log.info("Metastore level monitoring enabled");
+        this.inner = inner;
+        this.registry = registry;
+    }
 
     @VisibleForTesting
     RemoteMeter okMeter(String action) {
@@ -50,12 +56,7 @@ public class MonitoringMetastore implements FileSystemMetastore{
 
     @VisibleForTesting
     RemoteTimer.Context timer(String action) {
-        return registry.timer(timerBaseId.tagged("what", action)).time();
-    }
-
-    public MonitoringMetastore(FileSystemMetastore inner, RemoteSemanticMetricRegistry registry) {
-        this.inner = inner;
-        this.registry = registry;
+        return registry.timer(timerBaseId.tagged("what", "s3mper-metastore-latency-" + action)).time();
     }
 
     @Override
