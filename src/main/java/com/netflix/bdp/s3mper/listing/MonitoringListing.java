@@ -5,7 +5,7 @@ import com.spotify.metrics.core.MetricId;
 import com.spotify.metrics.core.RemoteMeter;
 import com.spotify.metrics.core.RemoteSemanticMetricRegistry;
 import com.spotify.metrics.core.RemoteTimer;
-import org.aspectj.lang.JoinPoint;
+import org.apache.log4j.Logger;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.SourceLocation;
@@ -17,18 +17,22 @@ import org.aspectj.runtime.internal.AroundClosure;
  */
 public class MonitoringListing implements Listing {
 
+    private static final Logger log =
+            Logger.getLogger(MonitoringListing.class);
+
     private final Listing inner;
 
     private final RemoteSemanticMetricRegistry registry;
 
     private final MetricId baseId = MetricId.build("hadoop");
     private final MetricId meterBaseId = baseId.tagged(
-            "what", "s3mper-requests", "unit", "request");
+            "what", "s3mper-listing-requests", "unit", "request");
     private final MetricId timerBaseId = baseId.tagged(
             "unit", "ns");
 
     public MonitoringListing(
             RemoteSemanticMetricRegistry registry, Listing inner) {
+        log.info("Listing level monitoring enabled");
         this.registry = registry;
         this.inner = inner;
     }
@@ -47,7 +51,7 @@ public class MonitoringListing implements Listing {
 
     @VisibleForTesting
     RemoteTimer.Context timer(String action) {
-        return registry.timer(timerBaseId.tagged("what", action)).time();
+        return registry.timer(timerBaseId.tagged("what", "s3mper-listing-latency-" + action)).time();
     }
 
     @Override
@@ -87,7 +91,7 @@ public class MonitoringListing implements Listing {
             okMeter("rename").mark();
             return res;
         } catch (Exception e) {
-            errorMeter("rename", e.getMessage()).mark();
+            errorMeter("rename", e.getClass().toString()).mark();
             throw e;
         }
     }
@@ -110,10 +114,24 @@ public class MonitoringListing implements Listing {
 
         private final ProceedingJoinPoint inner;
         private final String action;
+        private final MetricId pjpMeterBaseId = baseId.tagged(
+                "what", "s3mper-listing-pjp-requests", "unit", "request");
 
         private MonitoredJoinPoint(ProceedingJoinPoint inner, String action) {
             this.inner = inner;
             this.action = action + "-pjp";
+        }
+
+        @VisibleForTesting
+        RemoteMeter okPjpMeter(String action) {
+            return registry.meter(pjpMeterBaseId.tagged(
+                    "action", action, "result", "ok"));
+        }
+
+        @VisibleForTesting
+        RemoteMeter errorPjpMeter(String action, String result) {
+            return registry.meter(pjpMeterBaseId.tagged(
+                    "action", action, "result", result));
         }
 
         @Override
@@ -127,10 +145,10 @@ public class MonitoringListing implements Listing {
                 RemoteTimer.Context timer = timer(action);
                 Object res = inner.proceed();
                 timer.stop();
-                okMeter(action).mark();
+                okPjpMeter(action).mark();
                 return res;
             } catch (Exception e) {
-                errorMeter(action, e.getMessage()).mark();
+                errorPjpMeter(action, e.getMessage()).mark();
                 throw e;
             }
         }
@@ -141,10 +159,10 @@ public class MonitoringListing implements Listing {
                 RemoteTimer.Context timer = timer(action);
                 Object res = inner.proceed(args);
                 timer.stop();
-                okMeter(action).mark();
+                okPjpMeter(action).mark();
                 return res;
             } catch (Exception e) {
-                errorMeter(action, e.getMessage()).mark();
+                errorPjpMeter(action, e.getMessage()).mark();
                 throw e;
             }
         }
