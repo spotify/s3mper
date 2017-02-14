@@ -175,3 +175,8 @@ Issues
 Please file issues on github [here](https://github.com/Netflix/s3mper/issues "S3mper Issue Tracking")
 
 
+Code of Conduct
+---------------
+This project adheres to the [Open Code of Conduct][code-of-conduct]. By participating, you are expected to honor this code.
+
+[code-of-conduct]: https://github.com/spotify/code-of-conduct/blob/master/code-of-conduct.md
